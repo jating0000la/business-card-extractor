@@ -1,0 +1,86 @@
+# Docker configuration for the Business Card Extractor
+
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7.0
+    container_name: card-extractor-db
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: card-extractor
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - card-extractor-network
+
+  # Redis for BullMQ (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: card-extractor-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - card-extractor-network
+
+  # Backend API
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: card-extractor-backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      MONGODB_URI: mongodb://admin:password@mongodb:27017/card-extractor?authSource=admin
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      FRONTEND_URL: ${FRONTEND_URL}
+    depends_on:
+      - mongodb
+      - redis
+    networks:
+      - card-extractor-network
+    volumes:
+      - ./backend/logs:/app/logs
+
+  # Frontend (Nginx serving static files)
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: card-extractor-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      VITE_API_URL: ${API_URL}
+      VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+    depends_on:
+      - backend
+    networks:
+      - card-extractor-network
+
+volumes:
+  mongodb_data:
+  redis_data:
+
+networks:
+  card-extractor-network:
+    driver: bridge
